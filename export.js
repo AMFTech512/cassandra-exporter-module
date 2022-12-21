@@ -35,7 +35,7 @@ async function exportFromDB({
     systemClient = new cassandra.Client({contactPoints: [HOST], authProvider: authProvider, protocolOptions: {port: [PORT]}});
     client = new cassandra.Client({ contactPoints: [HOST], keyspace: KEYSPACE, authProvider: authProvider, protocolOptions: {port: [PORT]}});
 
-    systemClient.connect()
+    return systemClient.connect()
     .then(function (){
         var systemQuery = "SELECT columnfamily_name as table_name FROM system.schema_columnfamilies WHERE keyspace_name = ?";
         if (systemClient.metadata.keyspaces.system_schema) {
