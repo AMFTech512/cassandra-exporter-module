@@ -4,32 +4,78 @@ var cassandra = require('cassandra-driver');
 var fs = require('fs');
 var jsonStream = require('JSONStream');
 
-var HOST = process.env.HOST || '127.0.0.1';
-var PORT = process.env.PORT || 9042;
-var KEYSPACE = process.env.KEYSPACE;
+var systemClient;
+var client;
 
-if (!KEYSPACE) {
-    console.log('`KEYSPACE` must be specified as environment variable');
-    process.exit();
+async function importToDB({
+    HOST = '127.0.0.1',
+    PORT = 9042,
+    KEYSPACE,
+    USER,
+    PASSWORD,
+    DIRECTORY = './data',
+    USE_SSL
+}) {
+
+    if (!KEYSPACE) {
+        console.log('`KEYSPACE` must be specified as environment variable');
+        process.exit();
+    }
+    
+    var authProvider;
+    if (USER && PASSWORD) {
+        authProvider = new cassandra.auth.PlainTextAuthProvider(USER, PASSWORD);
+    }
+    
+    var sslOptions;
+    if (USE_SSL) {
+        sslOptions = { rejectUnauthorized: false };
+    }
+    
+    systemClient = new cassandra.Client({contactPoints: [HOST], authProvider: authProvider, protocolOptions: {port: [PORT]}, sslOptions: sslOptions });
+    client = new cassandra.Client({ contactPoints: [HOST], keyspace: KEYSPACE, authProvider: authProvider, protocolOptions: {port: [PORT]}, sslOptions: sslOptions });
+
+    systemClient.connect()
+    .then(function (){
+        var systemQuery = "SELECT columnfamily_name as table_name FROM system.schema_columnfamilies WHERE keyspace_name = ?";
+        if (systemClient.metadata.keyspaces.system_schema) {
+            systemQuery = "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ?";
+        }
+
+        console.log('Finding tables in keyspace: ' + KEYSPACE);
+        return systemClient.execute(systemQuery, [KEYSPACE]);
+    })
+    .then(function (result){
+        var tables = [];
+        for(var i=0; i<result.rows.length; i++) {
+            tables.push(result.rows[i].table_name);
+        }
+
+        if (process.env.TABLE) {
+            return processTableImport(process.env.TABLE, DIRECTORY);
+        }
+
+        return Promise.each(tables, function(table){
+            return processTableImport(table, DIRECTORY);
+        });
+    })
+    .then(function (){
+        console.log('==================================================');
+        var gracefulShutdown = [];
+        gracefulShutdown.push(systemClient.shutdown());
+        gracefulShutdown.push(client.shutdown());
+        Promise.all(gracefulShutdown)
+            .then(function (){
+                console.log('Completed importing to keyspace: ' + KEYSPACE);
+            })
+            .catch(function (err){
+                console.log(err);
+            });
+    })
+    .catch(function (err){
+        console.log(err);
+    });
 }
-
-var USER = process.env.USER;
-var PASSWORD = process.env.PASSWORD;
-var DIRECTORY = process.env.DIRECTORY || "./data";
-var USE_SSL = process.env.USE_SSL;
-
-var authProvider;
-if (USER && PASSWORD) {
-    authProvider = new cassandra.auth.PlainTextAuthProvider(USER, PASSWORD);
-}
-
-var sslOptions;
-if (USE_SSL) {
-    sslOptions = { rejectUnauthorized: false };
-}
-
-var systemClient = new cassandra.Client({contactPoints: [HOST], authProvider: authProvider, protocolOptions: {port: [PORT]}, sslOptions: sslOptions });
-var client = new cassandra.Client({ contactPoints: [HOST], keyspace: KEYSPACE, authProvider: authProvider, protocolOptions: {port: [PORT]}, sslOptions: sslOptions });
 
 function buildTableQueryForDataRow(tableInfo, row) {
     var queries = [];
@@ -80,7 +126,7 @@ function buildTableQueryForDataRow(tableInfo, row) {
     };
 }
 
-function processTableImport(table) {
+function processTableImport(table, DIRECTORY) {
     var rows = [];
     return new Promise(function(resolve, reject) {
         console.log('==================================================');
@@ -141,43 +187,4 @@ function processTableImport(table) {
     });
 }
 
-systemClient.connect()
-    .then(function (){
-        var systemQuery = "SELECT columnfamily_name as table_name FROM system.schema_columnfamilies WHERE keyspace_name = ?";
-        if (systemClient.metadata.keyspaces.system_schema) {
-            systemQuery = "SELECT table_name FROM system_schema.tables WHERE keyspace_name = ?";
-        }
-
-        console.log('Finding tables in keyspace: ' + KEYSPACE);
-        return systemClient.execute(systemQuery, [KEYSPACE]);
-    })
-    .then(function (result){
-        var tables = [];
-        for(var i=0; i<result.rows.length; i++) {
-            tables.push(result.rows[i].table_name);
-        }
-
-        if (process.env.TABLE) {
-            return processTableImport(process.env.TABLE);
-        }
-
-        return Promise.each(tables, function(table){
-            return processTableImport(table);
-        });
-    })
-    .then(function (){
-        console.log('==================================================');
-        var gracefulShutdown = [];
-        gracefulShutdown.push(systemClient.shutdown());
-        gracefulShutdown.push(client.shutdown());
-        Promise.all(gracefulShutdown)
-            .then(function (){
-                console.log('Completed importing to keyspace: ' + KEYSPACE);
-            })
-            .catch(function (err){
-                console.log(err);
-            });
-    })
-    .catch(function (err){
-        console.log(err);
-    });
+module.exports = importToDB;
