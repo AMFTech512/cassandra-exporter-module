@@ -52,11 +52,11 @@ async function importToDB({
         }
 
         if (process.env.TABLE) {
-            return processTableImport(process.env.TABLE, DIRECTORY);
+            return processTableImport(process.env.TABLE, DIRECTORY, KEYSPACE);
         }
 
         return Promise.each(tables, function(table){
-            return processTableImport(table, DIRECTORY);
+            return processTableImport(table, DIRECTORY, KEYSPACE);
         });
     })
     .then(async function (){
@@ -126,7 +126,7 @@ function buildTableQueryForDataRow(tableInfo, row) {
     };
 }
 
-function processTableImport(table, DIRECTORY) {
+function processTableImport(table, DIRECTORY, KEYSPACE) {
     var rows = [];
     return new Promise(function(resolve, reject) {
         console.log('==================================================');
