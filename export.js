@@ -59,16 +59,13 @@ async function exportFromDB({
             return processTableExport(table, DIRECTORY);
         });
     })
-    .then(function (){
+    .then(async function (){
         console.log('==================================================');
         console.log('Completed exporting all tables from keyspace: ' + KEYSPACE);
         var gracefulShutdown = [];
         gracefulShutdown.push(systemClient.shutdown());
         gracefulShutdown.push(client.shutdown());
-        Promise.all(gracefulShutdown)
-            .then(function (){
-                process.exit();
-            })
+        await Promise.all(gracefulShutdown)
             .catch(function (err){
                 console.log(err);
                 process.exit(1);

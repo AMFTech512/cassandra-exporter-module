@@ -59,12 +59,12 @@ async function importToDB({
             return processTableImport(table, DIRECTORY);
         });
     })
-    .then(function (){
+    .then(async function (){
         console.log('==================================================');
         var gracefulShutdown = [];
         gracefulShutdown.push(systemClient.shutdown());
         gracefulShutdown.push(client.shutdown());
-        Promise.all(gracefulShutdown)
+        await Promise.all(gracefulShutdown)
             .then(function (){
                 console.log('Completed importing to keyspace: ' + KEYSPACE);
             })
